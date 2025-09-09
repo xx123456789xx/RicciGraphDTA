@@ -7,9 +7,9 @@ from collections import OrderedDict
 from rdkit import Chem
 import networkx as nx
 from torch_geometric.data import Data
-from utils import TestbedDataset  # 请确保此模块中 GCNData 定义已包含 protein_sequence 字段
+from utils import TestbedDataset  # 此模块中 GCNData 定义已包含 protein_sequence 字段
 
-# ---------- 原子特征提取 ----------
+# ---------- One-hot 编码工具 ----------
 def one_of_k_encoding(x, allowable_set):
     if x not in allowable_set:
         raise Exception(f"input {x} not in allowable set {allowable_set}")
@@ -20,34 +20,26 @@ def one_of_k_encoding_unk(x, allowable_set):
         x = allowable_set[-1]
     return [x == s for s in allowable_set]
 
+# ---------- 原子特征提取（78维） ----------
 def atom_features(atom):
-    symbol_set = ['C', 'N', 'O', 'S', 'F', 'P', 'Cl', 'Br', 'I', 'B', 'H', 'Si', 'Se', 'other']
-    symbol = atom.GetSymbol()
-    symbol_feature = one_of_k_encoding_unk(symbol, symbol_set)
-    degree_feature = one_of_k_encoding(atom.GetDegree(), [0, 1, 2, 3, 4, 5])
-    formal_charge = [atom.GetFormalCharge()]
-    num_hs = one_of_k_encoding_unk(atom.GetTotalNumHs(), [0, 1, 2, 3, 4])
-    valence = one_of_k_encoding_unk(atom.GetImplicitValence(), [0, 1, 2, 3, 4, 5])
-    aromatic = [atom.GetIsAromatic()]
-    hybridization = one_of_k_encoding_unk(str(atom.GetHybridization()), 
-                                           ['SP', 'SP2', 'SP3', 'SP3D', 'SP3D2'])
-    chirality = one_of_k_encoding_unk(atom.GetChiralTag(), 
-                                      [Chem.rdchem.ChiralType.CHI_UNSPECIFIED, 
-                                       Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW, 
-                                       Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW])
-    return np.array(symbol_feature + degree_feature + formal_charge + num_hs +
-                    valence + aromatic + hybridization + chirality)  # 输出维度：78
+    return np.array(one_of_k_encoding_unk(atom.GetSymbol(), [
+        'C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg',
+        'Na','Ca', 'Fe', 'As', 'Al', 'I', 'B', 'V', 'K', 'Tl',
+        'Yb','Sb', 'Sn', 'Ag', 'Pd', 'Co', 'Se', 'Ti', 'Zn',
+        'H','Li', 'Ge', 'Cu', 'Au', 'Ni', 'Cd', 'In', 'Mn',
+        'Zr','Cr', 'Pt', 'Hg', 'Pb', 'Unknown']) +
+        one_of_k_encoding(atom.GetDegree(), list(range(11))) +
+        one_of_k_encoding_unk(atom.GetTotalNumHs(), list(range(11))) +
+        one_of_k_encoding_unk(atom.GetImplicitValence(), list(range(11))) +
+        [atom.GetIsAromatic()])   # 输出维度 78
 
 # ---------- SMILES 转图 ----------
 def smile_to_graph(smile):
     mol = Chem.MolFromSmiles(smile)
-    
-    
     if mol is None:
         raise ValueError(f"无法解析 SMILES: {smile}")
     canonical_smile = Chem.MolToSmiles(mol, isomericSmiles=True, canonical=True)
-    mol = Chem.MolFromSmiles(canonical_smile)  # 重新加载规范化的分子    if是修改的这一段，添加的
-    
+    mol = Chem.MolFromSmiles(canonical_smile)  # 重新加载规范化分子
     
     c_size = mol.GetNumAtoms()
     features = [atom_features(atom) for atom in mol.GetAtoms()]
@@ -78,9 +70,8 @@ def process_dataset(dataset='davis'):
     proteins = json.load(open(fpath + "proteins.txt"), object_pairs_hook=OrderedDict)
     affinity = pickle.load(open(fpath + "Y", "rb"), encoding='latin1')
 
-    # drugs = [Chem.MolToSmiles(Chem.MolFromSmiles(ligands[d]), isomericSmiles=True) for d in ligands]
-    drugs = [Chem.MolToSmiles(Chem.MolFromSmiles(ligands[d]), isomericSmiles=True, canonical=True) for d in ligands]#修改的
-
+    # SMILES 规范化
+    drugs = [Chem.MolToSmiles(Chem.MolFromSmiles(ligands[d]), isomericSmiles=True, canonical=True) for d in ligands]
     prots = list(proteins.values())
 
     if dataset == 'davis':
@@ -117,7 +108,7 @@ def process_dataset(dataset='davis'):
         if not os.path.exists(processed_file):
             print(f'Generating {processed_file}...')
             dataset_obj = TestbedDataset(root='data', dataset=f'{dataset}_{opt}',
-                                         xd=drugs, xt=prots, y=labels, smile_graph=smile_graph)  # 加入序列原文
+                                         xd=drugs, xt=prots, y=labels, smile_graph=smile_graph)
         else:
             print(f'{processed_file} already exists.')
 
