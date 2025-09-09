@@ -6,7 +6,7 @@ from torch_geometric.nn import global_add_pool
 from torch_geometric.nn import MessagePassing
 
 class GINConvNetWithCurvature(torch.nn.Module):
-    def __init__(self, n_output=1, num_features_xd=41, num_features_xt=25,
+    def __init__(self, n_output=1, num_features_xd=78, num_features_xt=25,
                  embed_dim=128, output_dim=128, dropout=0.2, lstm_hidden_dim=256, lstm_layers=1):
         super(GINConvNetWithCurvature, self).__init__()
 
